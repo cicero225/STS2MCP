@@ -1708,28 +1708,31 @@ public static partial class McpMod
         foreach (var pt in map.GetAllMapPoints())
             nodes.Add(BuildMapNode(pt));
 
-        // Boss
-        var primaryBossId = ReadModelIdEntry(runState, "BossId")
-            ?? ReadModelIdEntry(map, "BossId")
-            ?? ReadModelIdEntry(map.BossMapPoint, "BossId", "EncounterId");
+        // Boss identity comes from the live act's EncounterModel — BossEncounter
+        // throws if the act hasn't finished setup yet, so guard the access.
+        EncounterModel? bossEncounter = null;
+        try { bossEncounter = runState.Act.BossEncounter; } catch { }
+        var secondBossEncounter = runState.Act.SecondBossEncounter;
+
+        var primaryBossId = bossEncounter?.Id?.Entry;
+        var primaryBossName = SafeGetText(() => bossEncounter?.Title);
         var bossNode = BuildMapNode(map.BossMapPoint);
-        AddBossIdentity(bossNode, primaryBossId);
+        AddBossIdentity(bossNode, primaryBossId, primaryBossName);
         nodes.Add(bossNode);
 
         Dictionary<string, object?>? secondBoss = null;
         if (map.SecondBossMapPoint != null)
         {
-            var secondBossId = ReadModelIdEntry(runState, "SecondBossId")
-                ?? ReadModelIdEntry(map, "SecondBossId")
-                ?? ReadModelIdEntry(map.SecondBossMapPoint, "SecondBossId", "BossId", "EncounterId");
+            var secondBossId = secondBossEncounter?.Id?.Entry;
+            var secondBossName = SafeGetText(() => secondBossEncounter?.Title);
             var secondBossNode = BuildMapNode(map.SecondBossMapPoint);
-            AddBossIdentity(secondBossNode, secondBossId);
+            AddBossIdentity(secondBossNode, secondBossId, secondBossName);
             nodes.Add(secondBossNode);
-            secondBoss = BuildBossInfo(map.SecondBossMapPoint, secondBossId);
+            secondBoss = BuildBossInfo(map.SecondBossMapPoint, secondBossId, secondBossName);
         }
 
         state["nodes"] = nodes;
-        var primaryBoss = BuildBossInfo(map.BossMapPoint, primaryBossId);
+        var primaryBoss = BuildBossInfo(map.BossMapPoint, primaryBossId, primaryBossName);
         state["boss"] = primaryBoss;
         state["bosses"] = secondBoss != null
             ? new List<Dictionary<string, object?>> { primaryBoss, secondBoss }
@@ -1738,91 +1741,25 @@ public static partial class McpMod
         return state;
     }
 
-    private static Dictionary<string, object?> BuildBossInfo(MapPoint pt, string? bossId)
+    private static Dictionary<string, object?> BuildBossInfo(MapPoint pt, string? bossId, string? bossName)
     {
         var boss = new Dictionary<string, object?>
         {
             ["col"] = pt.coord.col,
             ["row"] = pt.coord.row
         };
-        AddBossIdentity(boss, bossId);
+        AddBossIdentity(boss, bossId, bossName);
         return boss;
     }
 
-    private static void AddBossIdentity(Dictionary<string, object?> target, string? bossId)
+    private static void AddBossIdentity(Dictionary<string, object?> target, string? bossId, string? bossName)
     {
         if (string.IsNullOrWhiteSpace(bossId))
             return;
 
         target["id"] = bossId;
-        target["name"] = BuildDisplayNameFromId(bossId);
-    }
-
-    private static string? ReadModelIdEntry(object? source, params string[] memberNames)
-    {
-        foreach (var memberName in memberNames)
-        {
-            var value = GetBossMemberValue(source, memberName);
-            if (value == null)
-                continue;
-
-            var entry = GetBossMemberValue(value, "Entry")?.ToString();
-            if (!string.IsNullOrWhiteSpace(entry))
-                return entry;
-
-            var text = value.ToString();
-            if (!string.IsNullOrWhiteSpace(text))
-                return text;
-        }
-
-        return null;
-    }
-
-    private static object? GetBossMemberValue(object? source, string memberName)
-    {
-        if (source == null)
-            return null;
-
-        const System.Reflection.BindingFlags Flags =
-            System.Reflection.BindingFlags.Instance |
-            System.Reflection.BindingFlags.Public |
-            System.Reflection.BindingFlags.NonPublic;
-
-        for (var type = source.GetType(); type != null; type = type.BaseType)
-        {
-            var property = type.GetProperty(memberName, Flags);
-            if (property != null && property.GetIndexParameters().Length == 0)
-            {
-                try { return property.GetValue(source); }
-                catch { return null; }
-            }
-
-            var field = type.GetField(memberName, Flags);
-            if (field != null)
-            {
-                try { return field.GetValue(source); }
-                catch { return null; }
-            }
-        }
-
-        return null;
-    }
-
-    private static string BuildDisplayNameFromId(string id)
-    {
-        var lastSegment = id
-            .Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .LastOrDefault() ?? id;
-        if (lastSegment.EndsWith("_BOSS", StringComparison.OrdinalIgnoreCase))
-            lastSegment = lastSegment[..^5];
-
-        var words = lastSegment
-            .Replace('-', '_')
-            .Split('_', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        return words.Length == 0
-            ? id
-            : string.Join(" ", words.Select(word => char.ToUpperInvariant(word[0]) + word[1..].ToLowerInvariant()));
+        if (!string.IsNullOrWhiteSpace(bossName))
+            target["name"] = bossName;
     }
 
     private static Dictionary<string, object?> BuildMapNode(MapPoint pt)
