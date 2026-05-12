@@ -7,6 +7,8 @@ HTTP API on `localhost:15526`. No authentication.
 - `GET /api/v1/multiplayer` — read multiplayer state
 - `POST /api/v1/multiplayer` — perform multiplayer action
 - `GET /api/v1/profile` — read current profile progress
+- `GET /api/v1/compendium` — read Compendium-shaped profile progress
+- `GET /api/v1/wiki` — fuzzy-search discovered card/relic wiki entries
 - `GET /api/v1/profiles` — list profile slots
 - `POST /api/v1/profiles` — switch or delete profile slots
 
@@ -61,6 +63,28 @@ All POST requests use JSON body with `"action"` field. All responses include `{ 
 ### Profiles
 
 `GET /api/v1/profile` returns persistent progress for the active profile, including character stats, discoveries, achievements, epochs, and global run totals.
+
+`GET /api/v1/compendium` returns the active profile grouped like the in-game Compendium:
+
+When a run is active, the response includes `current_run.run_id` in `{save_scope}:profile{profile_id}:{start_time}` format. This identifies the specific run attempt, while `seed` identifies the generated run content.
+
+| Section | Status |
+|---|---|
+| `card_library` | Discovered cards plus pick/skip/win/loss stats. Card rules text is supplied by game state when cards are visible in a run. |
+| `relic_collection` | Discovered relic IDs. Profile data does not expose a typed per-relic description or obtained-count catalog. |
+| `potion_lab` | Discovered potion IDs. Profile data does not expose a typed per-potion rules text or lab metadata catalog. |
+| `bestiary` | Encounter/enemy profile fight stats. The game UI marks Bestiary as future/locked, so this is stats-only rather than a full enemy catalog. |
+| `character_stats` | Per-character and global totals. |
+| `run_history` | Summaries of the active profile's saved `saves/history/*.run` files, capped to the 20 most recent entries. |
+
+Run history is resolved from the active Steam account's profile save root. `current_run.run_id` identifies one concrete attempt; `seed` identifies generated run content and can repeat across attempts.
+
+`GET /api/v1/wiki?query=<text>&item_type=<all|card|relic>&limit=<n>` returns a bounded fuzzy-search result over the active profile's discovered cards and relics. `query` is required because this endpoint is intentionally selective and does not dump the full catalog. `item_type` defaults to `all`, and `limit` defaults to 10 with an internal maximum. Card results include both `base` and `upgraded` objects when the card can be upgraded.
+
+Example searches:
+
+- `/api/v1/wiki?query=ironclad%20perfect%20strike&item_type=card`
+- `/api/v1/wiki?query=silver%20spoon&item_type=relic&limit=5`
 
 `GET /api/v1/profiles` returns the three profile slots:
 

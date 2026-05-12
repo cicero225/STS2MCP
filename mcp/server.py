@@ -31,6 +31,14 @@ def _profile_url() -> str:
     return f"{_base_url}/api/v1/profile"
 
 
+def _compendium_url() -> str:
+    return f"{_base_url}/api/v1/compendium"
+
+
+def _wiki_url() -> str:
+    return f"{_base_url}/api/v1/wiki"
+
+
 def _profiles_url() -> str:
     return f"{_base_url}/api/v1/profiles"
 
@@ -68,6 +76,21 @@ async def _mp_post(body: dict) -> str:
 
 async def _profile_get() -> str:
     r = await _get_client().get(_profile_url())
+    r.raise_for_status()
+    return r.text
+
+
+async def _compendium_get() -> str:
+    r = await _get_client().get(_compendium_url())
+    r.raise_for_status()
+    return r.text
+
+
+async def _wiki_get(query: str, item_type: str = "all", limit: int = 10) -> str:
+    r = await _get_client().get(
+        _wiki_url(),
+        params={"query": query, "item_type": item_type, "limit": limit},
+    )
     r.raise_for_status()
     return r.text
 
@@ -195,6 +218,43 @@ async def get_profile() -> str:
     """
     try:
         return await _profile_get()
+    except Exception as e:
+        return _handle_error(e)
+
+
+@mcp.tool()
+async def get_compendium() -> str:
+    """Get the active profile's Compendium-shaped progress summary.
+
+    Mirrors the visible Compendium cards: Card Library, Relic Collection,
+    Potion Lab, Bestiary, Character Stats, and Run History. This is a
+    profile-level view, so it is useful at the main menu as well as during a run.
+    Card/relic/potion rules text is still supplied by game state when those
+    objects are visible in run-specific contexts.
+    """
+    try:
+        return await _compendium_get()
+    except Exception as e:
+        return _handle_error(e)
+
+
+@mcp.tool()
+async def search_wiki(query: str, item_type: str = "all", limit: int = 10) -> str:
+    """Search discovered card and relic wiki entries for the active profile.
+
+    Uses fuzzy matching over profile-unlocked content only, so agents can ask
+    for a card or relic by approximate name without receiving the entire game
+    catalog. Card results include both base and upgraded variants when the card
+    can be upgraded.
+
+    Args:
+        query: Search text such as "ironclad perfect strike" or "silver spoon".
+        item_type: "all", "card", or "relic".
+        limit: Maximum results to return. Defaults to 10; the mod clamps it to
+            a bounded maximum.
+    """
+    try:
+        return await _wiki_get(query, item_type, limit)
     except Exception as e:
         return _handle_error(e)
 
