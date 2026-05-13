@@ -429,8 +429,13 @@ public static partial class McpMod
             result["state_type"] = "relic_select";
             result["relic_select"] = BuildRelicSelectState(relicSelectScreen, runState);
         }
-        else if (topOverlay is NCrystalSphereScreen crystalSphereScreen)
+        else if (!mapIsOpen && topOverlay is NCrystalSphereScreen crystalSphereScreen)
         {
+            // Mirror the NRewardsScreen guard below: the Crystal Sphere overlay
+            // lingers on the stack after proceed is clicked (only ClearScreens
+            // on the next room transition pops it). Once the map opens on top,
+            // report "map" so state matches the screen the player can interact
+            // with. See issue #73.
             result["state_type"] = "crystal_sphere";
             result["crystal_sphere"] = BuildCrystalSphereState(crystalSphereScreen, runState);
         }
@@ -455,9 +460,13 @@ public static partial class McpMod
         }
         else if (topOverlay is IOverlayScreen
                  && topOverlay is not NRewardsScreen
-                 && topOverlay is not NCardRewardSelectionScreen)
+                 && topOverlay is not NCardRewardSelectionScreen
+                 && topOverlay is not NCrystalSphereScreen)
         {
-            // Catch-all for unhandled overlays - prevents soft-locks
+            // Catch-all for unhandled overlays - prevents soft-locks.
+            // Overlays that linger on the stack while the map takes over
+            // (rewards, card reward, Crystal Sphere) are excluded so the
+            // fallback below reports "map" once mapIsOpen is true.
             result["state_type"] = "overlay";
             result["overlay"] = new Dictionary<string, object?>
             {
