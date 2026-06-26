@@ -1949,13 +1949,18 @@ public static partial class McpMod
         state["cards"] = cards;
 
         // Preview container showing? (selection complete, awaiting confirm)
-        // Upgrade screens use UpgradeSinglePreviewContainer / UpgradeMultiPreviewContainer
+        // Upgrade screens use UpgradeSinglePreviewContainer / UpgradeMultiPreviewContainer;
+        // NDeckEnchantSelectScreen uses EnchantSingle/MultiPreviewContainer (its own confirm flow).
         var previewSingle = screen.GetNodeOrNull<Godot.Control>("%UpgradeSinglePreviewContainer");
         var previewMulti = screen.GetNodeOrNull<Godot.Control>("%UpgradeMultiPreviewContainer");
         var previewGeneric = screen.GetNodeOrNull<Godot.Control>("%PreviewContainer");
+        var enchantSingle = screen.GetNodeOrNull<Godot.Control>("%EnchantSinglePreviewContainer");
+        var enchantMulti = screen.GetNodeOrNull<Godot.Control>("%EnchantMultiPreviewContainer");
         bool previewShowing = (previewSingle?.Visible ?? false)
                             || (previewMulti?.Visible ?? false)
-                            || (previewGeneric?.Visible ?? false);
+                            || (previewGeneric?.Visible ?? false)
+                            || (enchantSingle?.Visible ?? false)
+                            || (enchantMulti?.Visible ?? false);
         state["preview_showing"] = previewShowing;
 
         // Button states - when a preview is open, cancel goes through the
@@ -1964,7 +1969,7 @@ public static partial class McpMod
         bool canCancel = false;
         if (previewShowing)
         {
-            foreach (var container in new[] { previewSingle, previewMulti, previewGeneric })
+            foreach (var container in new[] { previewSingle, previewMulti, previewGeneric, enchantSingle, enchantMulti })
             {
                 if (container?.Visible == true)
                 {

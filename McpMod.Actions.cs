@@ -671,8 +671,9 @@ public static partial class McpMod
             return Error("No card selection screen is open");
 
         // Check all preview containers (upgrade uses UpgradeSinglePreviewContainer / UpgradeMultiPreviewContainer,
-        // NDeckCardSelectScreen uses PreviewContainer with %PreviewConfirm)
-        foreach (var containerName in new[] { "%UpgradeSinglePreviewContainer", "%UpgradeMultiPreviewContainer", "%PreviewContainer" })
+        // NDeckCardSelectScreen uses PreviewContainer with %PreviewConfirm, NDeckEnchantSelectScreen uses
+        // EnchantSingle/MultiPreviewContainer each with a child "Confirm" -> ConfirmSelection())
+        foreach (var containerName in new[] { "%UpgradeSinglePreviewContainer", "%UpgradeMultiPreviewContainer", "%PreviewContainer", "%EnchantSinglePreviewContainer", "%EnchantMultiPreviewContainer" })
         {
             var container = screen.GetNodeOrNull<Godot.Control>(containerName);
             if (container?.Visible == true)
