@@ -388,7 +388,12 @@ public static partial class McpMod
 
         try
         {
-            var stateTask = RunOnMainThread(() => BuildGameState());
+            var stateTask = RunOnMainThread(() =>
+            {
+                var s = BuildGameState();
+                AddEngineLiveness(s);
+                return s;
+            });
             var state = stateTask.GetAwaiter().GetResult();
 
             if (format == "markdown")

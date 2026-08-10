@@ -545,16 +545,17 @@ public static partial class McpMod
             }
             else
             {
-                // Auto-open the shopkeeper's inventory if not already open.
-                // NMerchantRoom.Inventory (UI node) can be null before the scene is fully ready;
-                // OpenInventory() itself accesses Inventory.IsOpen, so guard against null.
+                // Fork change (STS2FableBot 2026-08-10, passive /state): this used to
+                // auto-call merchUI.OpenInventory() on every poll -- a GET endpoint
+                // mutating the UI. At the bot's 0.15s poll cadence that auto-advanced
+                // past the shopkeeper screen before the client ever saw it (implicated
+                // in the Foul-throw timing dance, screen flicker, phantom maps). /state
+                // now only REPORTS; the client opens via the open_shop_inventory action.
                 var merchUI = NMerchantRoom.Instance;
-                if (merchUI?.Inventory != null && !merchUI.Inventory.IsOpen)
-                {
-                    merchUI.OpenInventory();
-                }
                 result["state_type"] = "shop";
                 result["shop"] = BuildShopState(merchantRoom, runState);
+                if (result["shop"] is Dictionary<string, object?> shopDict)
+                    shopDict["inventory_open"] = merchUI?.Inventory?.IsOpen == true;
             }
         }
         else if (currentRoom is RestSiteRoom restSiteRoom)
@@ -1485,18 +1486,14 @@ public static partial class McpMod
             return state;
         }
 
-        // Auto-open the inventory if the merchant button is still available
+        // Fork change (STS2FableBot 2026-08-10, passive /state): auto-ForceClick of the
+        // merchant button on every poll removed -- /state must not mutate the UI. The
+        // client opens via open_shop_inventory (which clicks the button so the proper
+        // signal chain runs: proceed disable, InventoryClosed callback, etc.).
         if (fakeMerchantNode != null)
         {
             var inventoryUI = FindFirst<NMerchantInventory>(fakeMerchantNode);
-            if (inventoryUI != null && !inventoryUI.IsOpen)
-            {
-                // ForceClick the merchant button to go through the proper signal chain
-                // (disables proceed button, wires InventoryClosed callback, etc.)
-                var merchantButton = fakeMerchantNode.MerchantButton;
-                if (merchantButton != null && merchantButton.Visible && merchantButton.IsEnabled)
-                    merchantButton.ForceClick();
-            }
+            state["inventory_open"] = inventoryUI?.IsOpen == true;
         }
 
         // Build shop inventory from the FakeMerchant model
@@ -2319,14 +2316,20 @@ public static partial class McpMod
             return state;
         }
 
-        // Auto-open chest if not yet opened
+        // Fork change (STS2FableBot 2026-08-10, passive /state): this used to
+        // ForceClick the chest on EVERY poll while it read as enabled -- at 0.15s
+        // cadence, a click barrage into the treasure room during claim resolution.
+        // Prime re-entrancy suspect for the treasure-claim wedge that killed two
+        // 40-run batches in 24h (claims 'ok' into a frozen queue, relic stuck on
+        // an open chest). /state now only REPORTS; the client opens via open_chest.
         var chestButton = treasureUI.GetNodeOrNull<NClickableControl>("Chest");
         if (chestButton is { IsEnabled: true })
         {
-            chestButton.ForceClick();
-            state["message"] = "Opening chest...";
+            state["chest_open"] = false;
+            state["message"] = "Chest unopened; send open_chest";
             return state;
         }
+        state["chest_open"] = true;
 
         // Show relics available for picking
         var relicCollection = treasureUI.GetNodeOrNull<NTreasureRoomRelicCollection>("%RelicCollection");
@@ -2440,5 +2443,37 @@ public static partial class McpMod
         }
 
         return pets;
+    }
+
+    // Fork addition (STS2FableBot 2026-08-10): engine-liveness observables for the
+    // wedge class where actions return "ok" into a frozen logic queue while /state
+    // keeps serving healthy payloads (treasure-claim batch killers; also the
+    // mid-combat card-resolution freezes). The client compares across polls:
+    // process_frames advancing while action_queue_empty stays false and
+    // action_queue_next_id stays flat = wedged engine -> fire abandon_run.
+    // Deliberately cheap and read-only: no GetReadyAction() (it prunes canceled
+    // heads -- a side effect a state poll must never have).
+    private static void AddEngineLiveness(Dictionary<string, object?> result)
+    {
+        try
+        {
+            var rm = RunManager.Instance;
+            bool inRun = rm?.IsInProgress == true;
+            result["engine"] = new Dictionary<string, object?>
+            {
+                ["process_frames"] = (long)Godot.Engine.GetProcessFrames(),
+                ["physics_frames"] = (long)Godot.Engine.GetPhysicsFrames(),
+                ["action_queue_empty"] = inRun ? rm!.ActionQueueSet?.IsEmpty : null,
+                ["action_queue_next_id"] = inRun ? rm!.ActionQueueSet?.NextActionId : null,
+                // capability flag: /state no longer mutates UI (chest/shop auto-open
+                // removed); the client must use open_chest / open_shop_inventory
+                ["passive_state"] = true,
+            };
+        }
+        catch (Exception ex)
+        {
+            // liveness must never break /state
+            result["engine"] = new Dictionary<string, object?> { ["error"] = ex.Message };
+        }
     }
 }

@@ -93,6 +93,9 @@ public static partial class McpMod
             "crystal_sphere_set_tool" => ExecuteCrystalSphereSetTool(data),
             "crystal_sphere_click_cell" => ExecuteCrystalSphereClickCell(data),
             "crystal_sphere_proceed" => ExecuteCrystalSphereProceed(),
+            "abandon_run" => ExecuteAbandonRun(),
+            "open_chest" => ExecuteOpenChest(),
+            "open_shop_inventory" => ExecuteOpenShopInventory(),
             _ => Error($"Unknown action: {action}")
         };
     }
@@ -968,6 +971,84 @@ public static partial class McpMod
             ["status"] = "ok",
             ["message"] = $"Claiming treasure relic: {relicName}"
         };
+    }
+
+    // Fork addition (STS2FableBot 2026-08-10): batch resilience. The treasure-claim
+    // wedge (engine logic queue frozen; claims return "ok" into the void while /state
+    // keeps serving healthy payloads) killed two 40-run batches in 24h. Decompile:
+    // RunManager.Abandon() -> AbandonInternal() is a DIRECT teardown (closes map and
+    // capstone containers, sets IsAbandoned, GuaranteeKillAllPlayers -> game-over flow)
+    // that does NOT route through the jammed ActionQueueSet, so it can recover where
+    // UI clicks can't. The orchestrator calls this on a stall-abort and the batch
+    // self-recovers to the main menu instead of dying mid-train.
+    private static Dictionary<string, object?> ExecuteAbandonRun()
+    {
+        if (RunManager.Instance?.IsInProgress != true)
+            return Error("No run in progress to abandon");
+        RunManager.Instance.Abandon();
+        return new Dictionary<string, object?>
+        {
+            ["status"] = "ok",
+            ["message"] = "Abandoning run (direct RunManager.Abandon; bypasses the action queue)"
+        };
+    }
+
+    // Fork addition (STS2FableBot 2026-08-10, passive /state): the chest used to be
+    // auto-clicked by the STATE BUILDER on every poll. Now an explicit, once, client-
+    // initiated action -- one click through the proper signal chain, no re-entrancy.
+    private static Dictionary<string, object?> ExecuteOpenChest()
+    {
+        var treasureUI = FindFirst<NTreasureRoom>(
+            ((Godot.SceneTree)Godot.Engine.GetMainLoop()).Root);
+        if (treasureUI == null)
+            return Error("Treasure room is not open");
+        var chestButton = treasureUI.GetNodeOrNull<NClickableControl>("Chest");
+        if (chestButton is not { IsEnabled: true })
+            return Error("Chest is not clickable (already opened?)");
+        chestButton.ForceClick();
+        return new Dictionary<string, object?>
+        {
+            ["status"] = "ok",
+            ["message"] = "Opening chest"
+        };
+    }
+
+    // Fork addition (STS2FableBot 2026-08-10, passive /state): replaces the state
+    // builder's auto OpenInventory (real shop) / merchant-button ForceClick (fake
+    // merchant). Explicit open keeps the shopkeeper screen inspectable first --
+    // the Foul-throw window becomes a stable screen instead of a blind timing race.
+    private static Dictionary<string, object?> ExecuteOpenShopInventory()
+    {
+        var merchUI = NMerchantRoom.Instance;
+        if (merchUI?.Inventory != null)
+        {
+            if (merchUI.Inventory.IsOpen)
+                return Error("Shop inventory is already open");
+            merchUI.OpenInventory();
+            return new Dictionary<string, object?>
+            {
+                ["status"] = "ok",
+                ["message"] = "Opening shop inventory"
+            };
+        }
+        var fakeMerchantNode = FindFirst<NFakeMerchant>(
+            ((Godot.SceneTree)Godot.Engine.GetMainLoop()).Root);
+        if (fakeMerchantNode != null)
+        {
+            var inventoryUI = FindFirst<NMerchantInventory>(fakeMerchantNode);
+            if (inventoryUI?.IsOpen == true)
+                return Error("Merchant inventory is already open");
+            var merchantButton = fakeMerchantNode.MerchantButton;
+            if (merchantButton == null || !merchantButton.Visible || !merchantButton.IsEnabled)
+                return Error("Merchant button is not clickable");
+            merchantButton.ForceClick();
+            return new Dictionary<string, object?>
+            {
+                ["status"] = "ok",
+                ["message"] = "Opening merchant inventory"
+            };
+        }
+        return Error("No shop or merchant screen is open");
     }
 
     private static Dictionary<string, object?> ExecuteCrystalSphereSetTool(Dictionary<string, JsonElement> data)
