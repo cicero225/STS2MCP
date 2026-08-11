@@ -94,6 +94,7 @@ public static partial class McpMod
             "crystal_sphere_click_cell" => ExecuteCrystalSphereClickCell(data),
             "crystal_sphere_proceed" => ExecuteCrystalSphereProceed(),
             "abandon_run" => ExecuteAbandonRun(),
+            "save_and_quit" => ExecuteSaveAndQuit(),
             "open_chest" => ExecuteOpenChest(),
             "open_shop_inventory" => ExecuteOpenShopInventory(),
             _ => Error($"Unknown action: {action}")
@@ -990,6 +991,26 @@ public static partial class McpMod
         {
             ["status"] = "ok",
             ["message"] = "Abandoning run (direct RunManager.Abandon; bypasses the action queue)"
+        };
+    }
+
+    // Fork addition (STS2FableBot 2026-08-10, owner design): save-and-quit to the
+    // main menu WITHOUT abandoning -- the run persists and Continue restores the
+    // fight to its start (mid-combat state is never saved). This is exactly the
+    // owner's manual savescum (force-close + Continue), automated: the fuzz
+    // harness's safety rail uses it to rewind risky fights with nobody present.
+    // Same path as the pause menu's Save & Quit (NPauseMenu.CloseToMenu ->
+    // NGame.ReturnToMainMenu), minus the button choreography.
+    private static Dictionary<string, object?> ExecuteSaveAndQuit()
+    {
+        if (RunManager.Instance?.IsInProgress != true)
+            return Error("No run in progress");
+        MegaCrit.Sts2.Core.Helpers.TaskHelper.RunSafely(
+            MegaCrit.Sts2.Core.Nodes.NGame.Instance.ReturnToMainMenu());
+        return new Dictionary<string, object?>
+        {
+            ["status"] = "ok",
+            ["message"] = "Saving and quitting to main menu (run persists; Continue restores the fight)"
         };
     }
 
