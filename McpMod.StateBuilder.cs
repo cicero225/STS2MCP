@@ -797,6 +797,38 @@ public static partial class McpMod
             result["options"] = options;
     }
 
+    // v0.111 (public-beta, 2026-09-26) turned StartRunLobby.MaxPlayers and
+    // LoadRunLobby.ConnectedPlayerIds into private fields (_maxPlayers /
+    // connectedPlayerIds) and renamed LobbyPlayer. Read them by reflection so
+    // one DLL loads on both API shapes; a missing member reads as null.
+    private static object? ReflectMember(object? target, params string[] names)
+    {
+        if (target == null) return null;
+        var t = target.GetType();
+        const System.Reflection.BindingFlags F = System.Reflection.BindingFlags.Instance
+            | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+        foreach (var n in names)
+        {
+            try
+            {
+                var prop = t.GetProperty(n, F);
+                if (prop != null) return prop.GetValue(target);
+                var field = t.GetField(n, F);
+                if (field != null) return field.GetValue(target);
+            }
+            catch { }
+        }
+        return null;
+    }
+
+    private static List<object>? ReflectIdList(object? target, params string[] names)
+    {
+        if (ReflectMember(target, names) is not System.Collections.IEnumerable e) return null;
+        var list = new List<object>();
+        foreach (var x in e) if (x != null) list.Add(x);
+        return list;
+    }
+
     private static Dictionary<string, object?> BuildStartRunLobbyState(StartRunLobby lobby)
     {
         var lobbyState = new Dictionary<string, object?>
@@ -809,7 +841,7 @@ public static partial class McpMod
                 _ => lobby.NetService.Type.ToString().ToLowerInvariant()
             },
             ["game_mode"] = lobby.GameMode.ToString().ToLowerInvariant(),
-            ["max_players"] = lobby.MaxPlayers,
+            ["max_players"] = ReflectMember(lobby, "MaxPlayers", "_maxPlayers"),
             ["ascension"] = lobby.Ascension,
             ["max_ascension"] = lobby.MaxAscension,
             ["all_ready"] = lobby.Players.Count > 0 && lobby.Players.All(p => p.isReady),
@@ -999,7 +1031,8 @@ public static partial class McpMod
             catch { }
 
             info["expected_player_count"] = lobby.Run?.Players?.Count ?? 0;
-            info["connected_player_count"] = lobby.ConnectedPlayerIds?.Count ?? 0;
+            var connectedIdList = ReflectIdList(lobby, "ConnectedPlayerIds", "connectedPlayerIds");
+            info["connected_player_count"] = connectedIdList?.Count ?? 0;
 
             // LoadRunLobby no longer exposes IsAboutToBeginGame in the public game API,
             // so derive the same readiness summary from connected players and ready flags.
@@ -1008,11 +1041,11 @@ public static partial class McpMod
             try
             {
                 var runPlayers = lobby.Run?.Players;
-                var connectedPlayerIds = lobby.ConnectedPlayerIds;
+                var connectedPlayerIds = connectedIdList;
                 aboutToBegin = runPlayers != null
                     && connectedPlayerIds != null
                     && runPlayers.Count > 0
-                    && runPlayers.All(player => connectedPlayerIds.Contains(player.NetId) && lobby.IsPlayerReady(player.NetId));
+                    && runPlayers.All(player => connectedPlayerIds.Any(id => Equals(id, player.NetId)) && lobby.IsPlayerReady(player.NetId));
             }
             catch { }
             info["all_ready"] = aboutToBegin;
@@ -1026,7 +1059,7 @@ public static partial class McpMod
                 {
                     foreach (var sp in lobby.Run.Players)
                     {
-                        bool isConnected = lobby.ConnectedPlayerIds?.Contains(sp.NetId) ?? false;
+                        bool isConnected = connectedIdList?.Any(id => Equals(id, sp.NetId)) ?? false;
                         bool isReady = false;
                         try { isReady = lobby.IsPlayerReady(sp.NetId); } catch { }
                         players.Add(new Dictionary<string, object?>
