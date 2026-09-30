@@ -14,6 +14,23 @@ Singleplayer and multiplayer (co-op) supported, plus full menu and lobby control
 > [!caution]
 > Multiplayer support is in **beta** — expect bugs. Any multiplayer issues encountered with this mod installed are very likely caused by the mod, not the game. Please disable the mod and verify the issue persists before reporting bugs to the STS2 developers.
 
+## About this fork
+
+This is [cicero225](https://github.com/cicero225)'s fork of
+[Gennadiyev/STS2MCP](https://github.com/Gennadiyev/STS2MCP), maintained for the
+[STS2FableBot](https://github.com/cicero225/STS2FableBot) project. It adds what a
+bot playing whole runs needs and tracks the game version the bot is running on.
+Everything else is upstream.
+
+| Branch | Game build | Adds |
+|---|---|---|
+| `main` | upstream base | master deck in the state payload (`player.deck`); `set_time_scale` and `set_ascension` actions; `battle.actions_disabled` for scripted combat lockouts; `selection_busy` on character select so a pick is not lost to the unlock animation |
+| `v107-fork` | v0.107.1 | `main` + v0.107.1 API compatibility; enchant-select screen support; `abandon_run` and `save_and_quit` actions; engine liveness and a passive `/state` read for wedge recovery |
+| `v111-fork` | v0.111 (public beta) | `v107-fork` + lobby fields read by reflection (the v0.111 `LobbyPlayer` change broke the upstream build) |
+
+Build with `build.ps1 -GameDir "<game dir>"` and copy the DLL from `out/` into the
+game's `mods/` folder. Check out the branch matching your game build first.
+
 ## For Players
 
 ### 1. Install the Mod
